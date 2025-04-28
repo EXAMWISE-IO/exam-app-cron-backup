@@ -13,7 +13,7 @@ jobs:
       LOCATION: southamerica-east1
       STORAGE_CLASS: NEARLINE
       SOURCE_BUCKET:  ${{ vars.SOURCE_BUCKET_OF_BACKUP }}
-      FIRESTORE_DATABASE: "(default)"  
+      FIRESTORE_DATABASE: (default)
       RETENTION_PERIOD: 2  
       SERVICE_ACCOUNT_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
     
@@ -46,7 +46,7 @@ jobs:
         run: |
           BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
           gcloud firestore export $BACKUP_PATH \
-            --database=${{ env.FIRESTORE_DATABASE }} \
+            --database="${{ env.FIRESTORE_DATABASE }}" \
             --collection-ids="(default)" \
             --project=${{ env.PROJECT_ID }}
       
