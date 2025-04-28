@@ -1,0 +1,113 @@
+name: GCloud Backup
+on:
+  # schedule:
+  #  - cron: '0 3 * * 0'  
+  workflow_dispatch:    
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ vars.PROJECT_ID }}
+      BACKUP_PREFIX: ${{ vars.TARGET_BUCKET_PREFIX }}
+      LOCATION: southamerica-east1
+      STORAGE_CLASS: NEARLINE
+      SOURCE_BUCKET:  ${{ vars.SOURCE_BUCKET_OF_BACKUP }}
+      FIRESTORE_DATABASE: "(default)"  
+      RETENTION_PERIOD: 2  
+      SERVICE_ACCOUNT_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
+    
+    steps:
+      - name: Configurar Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCLOUD_SERVICE_KEY }}
+      
+      - name: Instalar gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          install_components: 'alpha, beta'
+      
+      - name: Definir data do backup
+        id: date
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "month=$(date +'%Y-%m')" >> $GITHUB_OUTPUT
+          echo "year_month=$(date +'%Y-%m')" >> $GITHUB_OUTPUT
+      
+      - name: Verificar se bucket de backup existe ou criar
+        run: |
+          if ! gsutil ls -b gs://${{ env.BACKUP_PREFIX }} &>/dev/null; then
+            gsutil mb -c ${{ env.STORAGE_CLASS }} -l ${{ env.LOCATION }} gs://${{ env.BACKUP_PREFIX }}
+          fi
+      
+      - name: Fazer backup do Firestore
+        run: |
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
+          gcloud firestore export $BACKUP_PATH \
+            --database=${{ env.FIRESTORE_DATABASE }} \
+            --collection-ids="(default)" \
+            --project=${{ env.PROJECT_ID }}
+      
+      - name: Fazer backup do Storage (usando sincronização direta)
+        run: |
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
+          gsutil -m rsync -r gs://${{ env.SOURCE_BUCKET }} $BACKUP_PATH
+      
+      - name: Configurar retenção mensal
+        id: check_first
+        run: |
+          # Verificar se é o primeiro backup do mês
+          # Contagem precisa dos backups deste mês específico
+          MONTH_PREFIX="${{ steps.date.outputs.year_month }}"
+          COUNT=$(gsutil ls gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep "$MONTH_PREFIX" | wc -l)
+          
+          if [[ "$COUNT" -eq 1 ]]; then
+            echo "Primeiro backup do mês detectado - retendo este backup permanentemente"
+            echo "first_of_month=true" >> $GITHUB_OUTPUT
+            
+            # Marcar o backup mensal com metadados
+            gsutil label ch -l "retention-type:monthly" \
+              gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
+            gsutil label ch -l "retention-type:monthly" \
+              gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
+          else
+            echo "first_of_month=false" >> $GITHUB_OUTPUT
+            
+            # Marcar o backup semanal com metadados
+            gsutil label ch -l "retention-type:weekly" \
+              gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
+            gsutil label ch -l "retention-type:weekly" \
+              gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
+          fi
+      
+      - name: Limpar backups antigos
+        run: |
+          # Listar apenas os backups semanais
+          WEEKLY_BACKUPS=$(gsutil ls -L gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep -B2 "retention-type: weekly" | grep gs:// | sort)
+          
+          # Contar os backups semanais
+          COUNT=$(echo "$WEEKLY_BACKUPS" | wc -l)
+          
+          # Se houver mais que o número desejado, remover os mais antigos
+          if [[ $COUNT -gt ${{ env.RETENTION_PERIOD }} ]]; then
+            # Calcular quantos backups excluir
+            TO_DELETE=$((COUNT - ${{ env.RETENTION_PERIOD }}))
+            
+            # Obter a lista dos backups para excluir (os mais antigos)
+            DELETE_LIST=$(echo "$WEEKLY_BACKUPS" | head -n $TO_DELETE)
+            
+            # Excluir cada backup antigo
+            for backup_path in $DELETE_LIST; do
+              # Extrair a data do caminho
+              DATE=$(echo $backup_path | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+              echo "Removendo backup antigo de $DATE"
+              
+              # Remover os backups do Firestore e Storage com a mesma data
+              gsutil -m rm -r gs://${{ env.BACKUP_PREFIX }}/firestore/$DATE || true
+              gsutil -m rm -r gs://${{ env.BACKUP_PREFIX }}/storage/$DATE || true
+            done
+          else
+            echo "Ainda não há backups suficientes para rotação (encontrados $COUNT, limite é ${{ env.RETENTION_PERIOD }})"
+          fi
