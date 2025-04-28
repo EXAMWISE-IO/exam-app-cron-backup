@@ -44,7 +44,7 @@ jobs:
       
       - name: Fazer backup do Firestore
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/2025-04-29
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/2025-04-30
           gcloud firestore export $BACKUP_PATH \
             --database="${{ env.FIRESTORE_DATABASE }}" \
             --collection-ids="(default)" \
@@ -52,7 +52,7 @@ jobs:
       
       - name: Fazer backup do Storage 
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/2025-04-29
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/2025-04-30
           gsutil -m rsync -r gs://${{ env.SOURCE_BUCKET }} $BACKUP_PATH
       
       - name: Limpar backups antigos
@@ -66,10 +66,10 @@ jobs:
           # Se houver mais que o número desejado, remover os mais antigos
           if [[ $COUNT -gt ${{ env.RETENTION_PERIOD }} ]]; then
             # Calcular quantos backups excluir
-            TO_DELETE=$((COUNT - ${{ env.RETENTION_PERIOD }}))
+            # TO_DELETE=$((COUNT + 1 - ${{ env.RETENTION_PERIOD }}))
             
             # Obter a lista dos backups para excluir (os mais antigos)
-            DELETE_LIST=$(echo "$WEEKLY_BACKUPS" | head -n $TO_DELETE)
+            DELETE_LIST=$(echo "$WEEKLY_BACKUPS" | head -n  ${{ env.RETENTION_PERIOD }})
             
             # Excluir cada backup antigo
             for backup_path in $DELETE_LIST; do
