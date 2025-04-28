@@ -1,6 +1,6 @@
 name: GCloud Connection Test
 on:
-  workflow_dispatch:  # Permite execução manual apenas
+  workflow_dispatch:  
 
 jobs:
   test-gcloud-connection:
