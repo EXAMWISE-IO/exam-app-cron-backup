@@ -50,42 +50,15 @@ jobs:
             --collection-ids="(default)" \
             --project=${{ env.PROJECT_ID }}
       
-      - name: Fazer backup do Storage (usando sincronização direta)
+      - name: Fazer backup do Storage 
         run: |
           BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
           gsutil -m rsync -r gs://${{ env.SOURCE_BUCKET }} $BACKUP_PATH
       
-      - name: Configurar retenção mensal
-        id: check_first
-        run: |
-          # Verificar se é o primeiro backup do mês
-          # Contagem precisa dos backups deste mês específico
-          MONTH_PREFIX="${{ steps.date.outputs.year_month }}"
-          COUNT=$(gsutil ls gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep "$MONTH_PREFIX" | wc -l)
-          
-          if [[ "$COUNT" -eq 1 ]]; then
-            echo "Primeiro backup do mês detectado - retendo este backup permanentemente"
-            echo "first_of_month=true" >> $GITHUB_OUTPUT
-            
-            # Marcar o backup mensal com metadados
-            gsutil label ch -l "retention-type:monthly" \
-              gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
-            gsutil label ch -l "retention-type:monthly" \
-              gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
-          else
-            echo "first_of_month=false" >> $GITHUB_OUTPUT
-            
-            # Marcar o backup semanal com metadados
-            gsutil label ch -l "retention-type:weekly" \
-              gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
-            gsutil label ch -l "retention-type:weekly" \
-              gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
-          fi
-      
       - name: Limpar backups antigos
         run: |
           # Listar apenas os backups semanais
-          WEEKLY_BACKUPS=$(gsutil ls -L gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep -B2 "retention-type: weekly" | grep gs:// | sort)
+          WEEKLY_BACKUPS=$(gsutil ls -L gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep gs:// | sort)
           
           # Contar os backups semanais
           COUNT=$(echo "$WEEKLY_BACKUPS" | wc -l)
