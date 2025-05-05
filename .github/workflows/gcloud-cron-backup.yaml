@@ -8,14 +8,10 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     env:
-      PROJECT_ID: ${{ vars.PROJECT_ID }}
-      BACKUP_PREFIX: ${{ vars.TARGET_BUCKET_PREFIX }}
       LOCATION: southamerica-east1
       STORAGE_CLASS: NEARLINE
-      SOURCE_BUCKET:  ${{ vars.SOURCE_BUCKET_OF_BACKUP }}
       FIRESTORE_DATABASE: (default)
-      RETENTION_PERIOD: 2  
-      SERVICE_ACCOUNT_KEY: ${{ secrets.GCLOUD_SERVICE_KEY }}
+      RETENTION_PERIOD: 2 
     
     steps:
       - name: Configurar Google Cloud
@@ -26,7 +22,7 @@ jobs:
       - name: Instalar gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ env.PROJECT_ID }}
+          project_id: ${{ vars.PROJECT_ID }}
           install_components: 'alpha, beta'
       
       - name: Definir data do backup
@@ -38,27 +34,27 @@ jobs:
       
       - name: Verificar se bucket de backup existe ou criar
         run: |
-          if ! gsutil ls -b gs://${{ env.BACKUP_PREFIX }} &>/dev/null; then
-            gsutil mb -c ${{ env.STORAGE_CLASS }} -l ${{ env.LOCATION }} gs://${{ env.BACKUP_PREFIX }}
+          if ! gsutil ls -b gs://${{ vars.TARGET_BUCKET_PREFIX }} &>/dev/null; then
+            gsutil mb -c ${{ env.STORAGE_CLASS }} -l ${{ env.LOCATION }} gs://${{ vars.TARGET_BUCKET_PREFIX }}
           fi
       
       - name: Fazer backup do Firestore
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
+          BACKUP_PATH=gs://${{ vars.TARGET_BUCKET_PREFIX }}/firestore/${{ steps.date.outputs.date }}
           gcloud firestore export $BACKUP_PATH \
             --database="${{ env.FIRESTORE_DATABASE }}" \
             --collection-ids="(default)" \
-            --project=${{ env.PROJECT_ID }}
+            --project=${{ vars.PROJECT_ID }}
       
       - name: Fazer backup do Storage 
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
-          gsutil -m rsync -r gs://${{ env.SOURCE_BUCKET }} $BACKUP_PATH
+          BACKUP_PATH=gs://${{ vars.TARGET_BUCKET_PREFIX }}/storage/${{ steps.date.outputs.date }}
+          gsutil -m rsync -r gs://${{ vars.SOURCE_BUCKET_OF_BACKUP }} $BACKUP_PATH
       
       - name: Remover backup mais antigo
         run: |
           # Listar apenas os backups semanais
-          WEEKLY_BACKUPS=$(gsutil ls -L gs://${{ env.BACKUP_PREFIX }}/firestore/ | grep gs:// | sort)
+          WEEKLY_BACKUPS=$(gsutil ls -L gs://${{ vars.TARGET_BUCKET_PREFIX }}/firestore/ | grep gs:// | sort)
           
           # Contar os backups semanais
           COUNT=$(echo "$WEEKLY_BACKUPS" | wc -l)
@@ -75,8 +71,8 @@ jobs:
               echo "Removendo backup antigo de $DATE"
               
               # Remover os backups do Firestore e Storage com a mesma data
-              gsutil -m rm -r gs://${{ env.BACKUP_PREFIX }}/firestore/$DATE || true
-              gsutil -m rm -r gs://${{ env.BACKUP_PREFIX }}/storage/$DATE || true
+              gsutil -m rm -r gs://${{ vars.TARGET_BUCKET_PREFIX }}/firestore/$DATE || true
+              gsutil -m rm -r gs://${{ vars.TARGET_BUCKET_PREFIX }}/storage/$DATE || true
             done
           else
             echo "Ainda não há backups suficientes para rotação (encontrados $COUNT, limite é ${{ env.RETENTION_PERIOD }})"
