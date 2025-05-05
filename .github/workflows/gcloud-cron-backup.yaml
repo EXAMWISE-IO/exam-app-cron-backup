@@ -45,7 +45,7 @@ jobs:
       
       - name: Fazer backup do Firestore
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/${{ steps.date.outputs.date }}
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/firestore/2025-05-08
           gcloud firestore export $BACKUP_PATH \
             --database="${{ env.FIRESTORE_DATABASE }}" \
             --collection-ids="(default)" \
@@ -53,7 +53,7 @@ jobs:
       
       - name: Fazer backup do Storage 
         run: |
-          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/${{ steps.date.outputs.date }}
+          BACKUP_PATH=gs://${{ env.BACKUP_PREFIX }}/storage/2025-05-08
           gsutil -m rsync -r gs://${{ env.SOURCE_BUCKET }} $BACKUP_PATH
       
       - name: Remover backup mais antigo
